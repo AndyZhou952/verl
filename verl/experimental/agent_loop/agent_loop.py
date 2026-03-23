@@ -55,6 +55,10 @@ from verl.workers.rollout.replica import DiffusionOutput, TokenOutput, get_rollo
 logger = logging.getLogger(__file__)
 logger.setLevel(os.getenv("VERL_LOGGING_LEVEL", "WARN"))
 
+_EMBED_PAD_2D = frozenset({"prompt_embeds", "negative_prompt_embeds"})
+_EMBED_PAD_1D = frozenset({"prompt_embeds_mask", "negative_prompt_embeds_mask"})
+_EMBED_KEYS = _EMBED_PAD_2D | _EMBED_PAD_1D
+
 DEFAULT_ROUTING_CACHE_SIZE = 10000
 
 
@@ -1061,10 +1065,6 @@ class DiffusionAgentLoopWorker:
         self.tokenizer = self.model_config.tokenizer
         self.processor = self.model_config.processor
 
-        self.max_prompt_embed_length = self.model_config.extra_configs.get(
-            "max_sequence_length", self.rollout_config.prompt_length
-        )
-
         agent_loop_config_path = self.rollout_config.agent.agent_loop_config_path
         if agent_loop_config_path:
             resolved_path = resolve_config_path(agent_loop_config_path)
@@ -1156,14 +1156,10 @@ class DiffusionAgentLoopWorker:
         extra_fields = {}
         for k, v in output.extra_fields.items():
             if isinstance(v, torch.Tensor):
-                # handle prompt embedding padding
-                if k in ["prompt_embeds", "negative_prompt_embeds"]:
-                    pad_tuple = (0, 0, 0, self.max_prompt_embed_length - v.shape[0])
-                    v = F.pad(v, pad_tuple, value=0)
-                elif k in ["prompt_embeds_mask", "negative_prompt_embeds_mask"]:
-                    pad_tuple = (0, self.max_prompt_embed_length - v.shape[0])
-                    v = F.pad(v, pad_tuple, value=0)
-                extra_fields[k] = v.unsqueeze(0)
+                if k in _EMBED_KEYS:
+                    extra_fields[k] = v
+                else:
+                    extra_fields[k] = v.unsqueeze(0)
             else:
                 extra_fields[k] = v
 
@@ -1265,12 +1261,23 @@ class DiffusionAgentLoopWorker:
         if inputs[0].response_logprobs is not None:
             optional_outputs["rollout_log_probs"] = torch.cat([input.response_logprobs for input in inputs], dim=0)
 
-        # Handle extra fields that are tensors
         extra_keys = [k for k, v in inputs[0].extra_fields.items() if isinstance(v, torch.Tensor)]
         for key in extra_keys:
-            optional_outputs[key] = torch.cat([input.extra_fields[key] for input in inputs], dim=0)
-            for input in inputs:
-                del input.extra_fields[key]
+            tensors = [inp.extra_fields[key] for inp in inputs]
+            if key in _EMBED_PAD_2D:
+                max_len = max(t.shape[0] for t in tensors)
+                logger.info("dynamic pad key=%s to %d (num_samples=%d)", key, max_len, len(tensors))
+                tensors = [F.pad(t, (0, 0, 0, max_len - t.shape[0])) for t in tensors]
+                optional_outputs[key] = torch.stack(tensors, dim=0)
+            elif key in _EMBED_PAD_1D:
+                max_len = max(t.shape[0] for t in tensors)
+                logger.info("dynamic pad key=%s to %d (num_samples=%d)", key, max_len, len(tensors))
+                tensors = [F.pad(t, (0, max_len - t.shape[0])) for t in tensors]
+                optional_outputs[key] = torch.stack(tensors, dim=0)
+            else:
+                optional_outputs[key] = torch.cat(tensors, dim=0)
+            for inp in inputs:
+                del inp.extra_fields[key]
 
         batch = TensorDict(
             {
@@ -1350,6 +1357,22 @@ async def get_trajectory_info(step, index, validate):
             rollout_n = 0
         trajectory_info.append({"step": step, "sample_index": index[i], "rollout_n": rollout_n, "validate": validate})
     return trajectory_info
+
+
+def _reconcile_embed_shapes(outputs: list[DataProto]) -> None:
+    """Reconcile embed tensor shapes across workers so DataProto.concat succeeds."""
+    for key in _EMBED_KEYS:
+        if key not in outputs[0].batch:
+            continue
+        seq_dim = -2 if key in _EMBED_PAD_2D else -1
+        max_len = max(o.batch[key].shape[seq_dim] for o in outputs)
+        for o in outputs:
+            cur_len = o.batch[key].shape[seq_dim]
+            if cur_len < max_len:
+                if key in _EMBED_PAD_2D:
+                    o.batch[key] = F.pad(o.batch[key], (0, 0, 0, max_len - cur_len))
+                else:
+                    o.batch[key] = F.pad(o.batch[key], (0, max_len - cur_len))
 
 
 class AgentLoopManager:
@@ -1525,6 +1548,7 @@ class AgentLoopManager:
         )
         if self.distillation_enabled:
             await self.teacher_model_manager.sleep()
+        _reconcile_embed_shapes(outputs)
         output = DataProto.concat(outputs)
 
         # calculate performance metrics

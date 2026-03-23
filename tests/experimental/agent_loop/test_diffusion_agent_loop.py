@@ -46,7 +46,7 @@ def init_config() -> DictConfig:
 
     with open_dict(config.actor_rollout_ref.model.extra_configs):
         config.actor_rollout_ref.model.extra_configs.true_cfg_scale = 4.0
-        config.actor_rollout_ref.model.extra_configs.max_sequence_length = max_length
+        config.actor_rollout_ref.model.extra_configs.max_sequence_length = tokenizer_max_length
         config.actor_rollout_ref.model.extra_configs.noise_level = 1.0
         config.actor_rollout_ref.model.extra_configs.sde_window_size = 2
         config.actor_rollout_ref.model.extra_configs.sde_window_range = [0, 5]
@@ -137,6 +137,74 @@ def test_single_turn(init_config):
         num_turns = result.non_tensor_batch["__num_turns__"]
         assert np.all(num_turns == 2)
 
+        tokenizer_max_length = init_config.actor_rollout_ref.model.extra_configs.max_sequence_length
+        prompt_embeds = result.batch["prompt_embeds"]
+        prompt_embeds_mask = result.batch["prompt_embeds_mask"]
+        print(f"prompt_embeds shape: {prompt_embeds.shape} (config max_sequence_length={tokenizer_max_length})")
+        print(f"prompt_embeds_mask shape: {prompt_embeds_mask.shape}")
+        assert prompt_embeds.shape[1] <= tokenizer_max_length
+
         print("Test passed!")
+    finally:
+        ray.shutdown()
+
+
+def test_varied_prompt_lengths(init_config):
+    """Test dynamic padding with prompts of very different lengths across workers."""
+    ray.init(
+        runtime_env={
+            "env_vars": {
+                "TOKENIZERS_PARALLELISM": "true",
+                "NCCL_DEBUG": "WARN",
+                "VLLM_LOGGING_LEVEL": "INFO",
+            }
+        }
+    )
+    try:
+        agent_loop_manager = AgentLoopManager.create(init_config)
+
+        system_prompt = (
+            "Describe the image by detailing the color, shape, size, texture, quantity, text, "
+            "spatial relationships of the objects and background:"
+        )
+        short_prompt = "Cat."
+        medium_prompt = "A photo of cute cat with long fur and big eyes sitting on a windowsill."
+        long_prompt = "A highly detailed photograph of a cat. " * 40
+
+        user_prompts = [short_prompt, medium_prompt, long_prompt]
+        raw_prompts = [
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": p}]
+            for p in user_prompts
+        ]
+        raw_negative_prompts = [
+            [{"role": "system", "content": system_prompt}, {"role": "user", "content": " "}]
+            for _ in user_prompts
+        ]
+
+        batch = DataProto(
+            non_tensor_batch={
+                "raw_prompt": np.array(raw_prompts),
+                "raw_negative_prompt": np.array(raw_negative_prompts),
+                "data_source": np.array(["jpeg_compressibility"] * len(raw_prompts)),
+                "reward_model": np.array([{"style": "rule", "ground_truth": ""}] * len(raw_prompts)),
+            },
+        )
+        n = 2
+        batch = batch.repeat(n)
+        result = agent_loop_manager.generate_sequences(prompts=batch)
+        assert len(result) == len(raw_prompts) * n
+
+        tokenizer_max_length = init_config.actor_rollout_ref.model.extra_configs.max_sequence_length
+        prompt_embeds = result.batch["prompt_embeds"]
+        prompt_embeds_mask = result.batch["prompt_embeds_mask"]
+        embed_len = prompt_embeds.shape[1]
+
+        print(f"prompt_embeds shape: {prompt_embeds.shape} (config max_sequence_length={tokenizer_max_length})")
+        print(f"prompt_embeds_mask shape: {prompt_embeds_mask.shape}")
+        print(f"dynamic pad length={embed_len} vs fixed config max={tokenizer_max_length} "
+              f"(saved {tokenizer_max_length - embed_len} positions per sample)")
+        assert embed_len <= tokenizer_max_length
+
+        print("Test varied prompt lengths passed!")
     finally:
         ray.shutdown()

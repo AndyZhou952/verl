@@ -293,6 +293,7 @@ class TrainingWorker(Worker, DistProfilerExtension):
                     global_token_num = [x for xs in global_token_num_output for x in xs]
                 else:
                     global_token_num = None
+
                 tu.assign_non_tensor(
                     mini_batch_td,
                     global_token_num=NonTensorData(global_token_num),

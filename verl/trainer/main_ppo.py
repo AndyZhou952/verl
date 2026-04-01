@@ -348,13 +348,9 @@ class TaskRunner:
         from verl.utils import hf_processor, hf_tokenizer
 
         trust_remote_code = config.data.get("trust_remote_code", False)
-        tokenizer = hf_tokenizer(config.actor_rollout_ref.model.tokenizer_path, trust_remote_code=trust_remote_code)
+        tokenizer = hf_tokenizer(local_path, trust_remote_code=trust_remote_code)
         # Used for multimodal LLM, could be None
-        if os.path.exists(os.path.join(local_path, "processor")):
-            processor_path = os.path.join(local_path, "processor")
-        else:
-            processor_path = local_path
-        processor = hf_processor(processor_path, trust_remote_code=trust_remote_code, use_fast=True)
+        processor = hf_processor(local_path, trust_remote_code=trust_remote_code, use_fast=True)
 
         resource_pool_manager = self.init_resource_pool_mgr(config)
 

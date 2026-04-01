@@ -14,7 +14,6 @@
 import os
 from importlib.metadata import PackageNotFoundError, version
 
-from .vllm_omni_rollout import vLLMOmniServerAdapter  # noqa: F401
 from .vllm_rollout import ServerAdapter  # noqa: F401
 
 

@@ -13,7 +13,6 @@
 # limitations under the License.
 """Diffusion-specific policy loss functions and KL penalties."""
 
-<<<<<<< HEAD
 from collections import defaultdict
 from typing import Any, Optional
 
@@ -108,17 +107,6 @@ def compute_flow_grpo_outcome_advantage(
     return scores, scores
 
 
-=======
-from typing import Any, Optional
-
-import torch
-from omegaconf import DictConfig
-
-from verl.trainer.ppo.core_algos import register_policy_loss
-from verl.workers.config import ActorConfig
-
-
->>>>>>> ecc7463d (revert changes)
 @register_policy_loss("flow_grpo")
 def compute_policy_loss_flow_grpo(
     old_log_prob: torch.Tensor,
@@ -156,12 +144,8 @@ def compute_policy_loss_flow_grpo(
         -config.clip_ratio_high,
         config.clip_ratio_high,
     )
-<<<<<<< HEAD
-    ratio = torch.exp(log_prob - old_log_prob)
-=======
     log_ratio = log_prob - old_log_prob
     ratio = torch.exp(log_ratio)
->>>>>>> ecc7463d (revert changes)
     unclipped_loss = -advantages * ratio
     clipped_loss = -advantages * torch.clamp(
         ratio,
@@ -170,13 +154,6 @@ def compute_policy_loss_flow_grpo(
     )
     pg_loss = torch.mean(torch.maximum(unclipped_loss, clipped_loss))
 
-<<<<<<< HEAD
-    pg_clipfrac = torch.mean((torch.abs(ratio - 1.0) > config.clip_ratio).float())
-    ppo_kl = -torch.mean(log_prob - old_log_prob)
-    pg_metrics = {
-        "actor/pg_clipfrac": pg_clipfrac.detach().item(),
-        "actor/ppo_kl": ppo_kl.detach().item(),
-=======
     with torch.no_grad():
         ppo_kl = torch.mean(-log_ratio)
         pg_clipfrac = torch.mean((torch.abs(ratio - 1.0) > config.clip_ratio).float())
@@ -188,7 +165,6 @@ def compute_policy_loss_flow_grpo(
         "actor/pg_clipfrac": pg_clipfrac.detach().item(),
         "actor/pg_clipfrac_higher": pg_clipfrac_higher.detach().item(),
         "actor/pg_clipfrac_lower": pg_clipfrac_lower.detach().item(),
->>>>>>> ecc7463d (revert changes)
     }
     return pg_loss, pg_metrics
 

@@ -111,7 +111,7 @@ class DiffusersFSDPEngine(BaseEngine):
         # set FSDP offload params
         self._is_offload_param = self.engine_config.param_offload
         self._is_offload_optimizer = self.engine_config.optimizer_offload
-        self._is_lora = self.model_config.lora_rank
+        self._is_lora = self.model_config.lora_rank > 0
 
     @property
     def is_param_offload_enabled(self) -> bool:

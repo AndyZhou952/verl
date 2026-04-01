@@ -82,8 +82,14 @@ algorithm:
   # Required when using verl.utils.omega_conf_to_dataclass to instantiate dataclass configs
   _target_: verl.trainer.config.AlgoConfig
 
+  # Advantage estimator type: "flow_grpo"
+  adv_estimator: flow_grpo
+
   # Whether to normalize advantages by std (specific to GRPO)
   norm_adv_by_std_in_grpo: True
+
+  # Whether to normalize advantages using global standard deviation
+  global_std: True
 
 # config for the trainer
 trainer:

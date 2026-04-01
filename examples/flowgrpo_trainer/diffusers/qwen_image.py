@@ -24,7 +24,6 @@ from diffusers.pipelines.qwenimage.pipeline_qwenimage import calculate_shift
 from tensordict import TensorDict
 
 from verl.models.diffusers_model import DiffusionModelBase
-from verl.utils import tensordict_utils as tu
 from verl.utils.device import get_device_name
 from verl.workers.config import DiffusionModelConfig
 
@@ -60,56 +59,6 @@ class QwenImage(DiffusionModelBase):
         scheduler.set_timesteps(num_inference_steps, device=device, sigmas=sigmas, mu=mu)
 
     @classmethod
-    def prepare_model_inputs(
-        cls,
-        module: QwenImageTransformer2DModel,
-        model_config: DiffusionModelConfig,
-        latents: torch.Tensor,
-        timesteps: torch.Tensor,
-        prompt_embeds: torch.Tensor,
-        prompt_embeds_mask: torch.Tensor,
-        negative_prompt_embeds: torch.Tensor,
-        negative_prompt_embeds_mask: torch.Tensor,
-        micro_batch: TensorDict,
-        step: int,
-    ) -> tuple[dict, dict]:
-        height = tu.get_non_tensor_data(data=micro_batch, key="height", default=None)
-        width = tu.get_non_tensor_data(data=micro_batch, key="width", default=None)
-        vae_scale_factor = tu.get_non_tensor_data(data=micro_batch, key="vae_scale_factor", default=None)
-        img_shapes = [[(1, height // vae_scale_factor // 2, width // vae_scale_factor // 2)]] * latents.shape[0]
-
-        guidance_scale = model_config.extra_configs.get("guidance_scale", None)
-        if getattr(module.config, "guidance_embeds", False):
-            guidance = torch.full([1], guidance_scale, device=timesteps.device, dtype=torch.float32)
-        else:
-            guidance = None
-
-        hidden_states = latents[:, step]
-        timestep = timesteps[:, step] / 1000.0
-
-        model_inputs = {
-            "hidden_states": hidden_states,
-            "timestep": timestep,
-            "guidance": guidance,
-            "encoder_hidden_states_mask": prompt_embeds_mask,
-            "encoder_hidden_states": prompt_embeds,
-            "img_shapes": img_shapes,
-            "return_dict": False,
-        }
-
-        negative_model_inputs = {
-            "hidden_states": hidden_states,
-            "timestep": timestep,
-            "guidance": guidance,
-            "encoder_hidden_states_mask": negative_prompt_embeds_mask,
-            "encoder_hidden_states": negative_prompt_embeds,
-            "img_shapes": img_shapes,
-            "return_dict": False,
-        }
-
-        return model_inputs, negative_model_inputs
-
-    @classmethod
     def forward_and_sample_previous_step(
         cls,
         module: QwenImageTransformer2DModel,
@@ -136,7 +85,7 @@ class QwenImage(DiffusionModelBase):
 
         _, log_prob, prev_sample_mean, std_dev_t = scheduler.sample_previous_step(
             sample=latents[:, step].float(),
-            model_output=noise_pred.float(),
+            model_output=noise_pred,
             timestep=timesteps[:, step],
             noise_level=model_config.extra_configs.get("noise_level", None),
             prev_sample=latents[:, step + 1].float(),

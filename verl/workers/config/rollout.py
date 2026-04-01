@@ -65,7 +65,6 @@ class SamplingConfig(BaseConfig):
 
 @dataclass
 class DiffusionSamplingConfig(SamplingConfig):
-    noise_level: float = 0.0
     num_inference_steps: int = 40
     seed: int = 42
 

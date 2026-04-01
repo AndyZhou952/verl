@@ -31,7 +31,7 @@ from torch.distributed.fsdp import FullyShardedDataParallel as FSDP
 from torch.distributed.fsdp.api import FullStateDictConfig, ShardedStateDictConfig, StateDictType
 from torch.distributed.tensor import DTensor
 
-from verl.models.diffusers_model import build_scheduler, forward_and_sample_previous_step, prepare_model_inputs
+from verl.models.diffusers_model import build_scheduler, forward_and_sample_previous_step
 from verl.trainer.config import CheckpointConfig
 from verl.utils import tensordict_utils as tu
 from verl.utils.checkpoint.fsdp_checkpoint_manager import FSDPCheckpointManager
@@ -112,6 +112,7 @@ class DiffusersFSDPEngine(BaseEngine):
         self._is_offload_param = self.engine_config.param_offload
         self._is_offload_optimizer = self.engine_config.optimizer_offload
         self._is_lora = self.model_config.lora_rank > 0
+        self._guidance_scale = self.model_config.extra_configs.get("guidance_scale", None)
 
     @property
     def is_param_offload_enabled(self) -> bool:
@@ -184,7 +185,7 @@ class DiffusersFSDPEngine(BaseEngine):
                 self.model_config.local_path,
                 torch_dtype=torch_dtype,
                 trust_remote_code=self.model_config.trust_remote_code,
-                subfolder="transformer",  # currently we support DiT with transformer backbone only.
+                subfolder="transformer",
             )
 
             # some parameters may not in torch_dtype
@@ -439,15 +440,18 @@ class DiffusersFSDPEngine(BaseEngine):
     def forward_backward_batch(
         self, data: TensorDict, loss_function: Callable, forward_only: bool = False
     ) -> list[TensorDict]:
-        num_timesteps = data["all_timesteps"].shape[1]
+        # compute num_tokens in global batch for loss normalization
+        batch_num_tokens = data["loss_mask"].sum().to(get_device_id())
+        torch.distributed.all_reduce(
+            batch_num_tokens, op=torch.distributed.ReduceOp.SUM, group=self.get_data_parallel_group()
+        )
+        tu.assign_non_tensor(data, batch_num_tokens=batch_num_tokens.item())
+        tu.assign_non_tensor(data, dp_size=self.get_data_parallel_size())
         tu.assign_non_tensor(data, use_dynamic_bsz=False)
 
         micro_batches, indices = prepare_micro_batches(
             data=data, dp_group=self.get_data_parallel_group(), same_micro_num_in_dp=True
         )
-
-        gradient_accumulation_steps = len(micro_batches) * num_timesteps
-        tu.assign_non_tensor(data, gradient_accumulation_steps=gradient_accumulation_steps)
 
         output_lst = []
 
@@ -458,7 +462,7 @@ class DiffusersFSDPEngine(BaseEngine):
             meta_info_lst = {"model_output": [], "loss": [], "metrics": []}
             # Forward and backward for each timestep
             with ctx:
-                for step in range(num_timesteps):
+                for step in range(micro_batch["all_timesteps"].shape[1]):
                     loss, meta_info = self.forward_step(
                         micro_batch, loss_function=loss_function, forward_only=forward_only, step=step
                     )
@@ -520,13 +524,6 @@ class DiffusersFSDPEngine(BaseEngine):
         return embeds, mask
 
     def prepare_model_inputs(self, micro_batch: TensorDict, step: int):
-        """
-        Extract and pre-process universal tensors, then delegate architecture-specific
-        input construction to the registered DiffusionModelBase subclass.
-
-        Handles common tensor extraction and nested-embed unpadding here.
-        Architecture-specific input dict construction is delegated to the model registry.
-        """
         latents = micro_batch["all_latents"]
         timesteps = micro_batch["all_timesteps"]
         prompt_embeds = micro_batch["prompt_embeds"]
@@ -542,18 +539,40 @@ class DiffusersFSDPEngine(BaseEngine):
                 negative_prompt_embeds, negative_prompt_embeds_mask
             )
 
-        return prepare_model_inputs(
-            module=self.module,
-            model_config=self.model_config,
-            latents=latents,
-            timesteps=timesteps,
-            prompt_embeds=prompt_embeds,
-            prompt_embeds_mask=prompt_embeds_mask,
-            negative_prompt_embeds=negative_prompt_embeds,
-            negative_prompt_embeds_mask=negative_prompt_embeds_mask,
-            micro_batch=micro_batch,
-            step=step,
-        )
+        height = tu.get_non_tensor_data(data=micro_batch, key="height", default=None)
+        width = tu.get_non_tensor_data(data=micro_batch, key="width", default=None)
+        vae_scale_factor = tu.get_non_tensor_data(data=micro_batch, key="vae_scale_factor", default=None)
+        img_shapes = [[(1, height // vae_scale_factor // 2, width // vae_scale_factor // 2)]]
+
+        if getattr(self.module.config, "guidance_embeds", False):
+            guidance = torch.full([1], self._guidance_scale, device=timesteps.device, dtype=torch.float32)
+        else:
+            guidance = None
+
+        hidden_states = latents[:, step]
+        timestep = timesteps[:, step] / 1000.0
+
+        model_inputs = {
+            "hidden_states": hidden_states,
+            "timestep": timestep,
+            "guidance": guidance,
+            "encoder_hidden_states_mask": prompt_embeds_mask,
+            "encoder_hidden_states": prompt_embeds,
+            "img_shapes": img_shapes,
+            "return_dict": False,
+        }
+
+        negative_model_inputs = {
+            "hidden_states": hidden_states,
+            "timestep": timestep,
+            "guidance": guidance,
+            "encoder_hidden_states_mask": negative_prompt_embeds_mask,
+            "encoder_hidden_states": negative_prompt_embeds,
+            "img_shapes": img_shapes,
+            "return_dict": False,
+        }
+
+        return model_inputs, negative_model_inputs
 
     def prepare_model_outputs(self, output, micro_batch: TensorDict):
         log_prob, prev_sample_mean, std_dev_t = output
@@ -584,13 +603,6 @@ class DiffusersFSDPEngine(BaseEngine):
                     "response_mask": micro_batch["response_mask"][:, step],
                 },
             )
-            tu.assign_non_tensor(
-                data,
-                gradient_accumulation_steps=tu.get_non_tensor_data(
-                    micro_batch, "gradient_accumulation_steps", default=None
-                ),
-            )
-
             if micro_batch.get("ref_log_prob", None) is not None:
                 data["ref_log_prob"] = micro_batch["ref_log_prob"][:, step]
 

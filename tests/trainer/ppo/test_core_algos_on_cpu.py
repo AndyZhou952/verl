@@ -313,6 +313,32 @@ def test_grpo_and_vectorized_equivalence(batch_size: int, seq_len: int, num_grou
     assert torch.allclose(ret1, ret2, rtol=1e-5, atol=1e-6)
 
 
+@pytest.mark.parametrize("norm_adv_by_std_in_grpo", [True, False])
+@pytest.mark.parametrize("global_std", [True, False])
+def test_flow_grpo_advantage_return(norm_adv_by_std_in_grpo: bool, global_std: bool) -> None:
+    """Test flow-GRPO advantage and return computation."""
+    import uuid
+
+    from verl.trainer.ppo.core_algos import compute_flow_grpo_outcome_advantage
+
+    # prepere input
+    batch_size = 8
+    steps = 10
+    token_level_rewards = torch.randn((batch_size, 1), dtype=torch.float32)
+    response_mask = torch.ones((batch_size, steps), dtype=torch.int32)
+    uid = np.array([uuid.uuid4().hex for _ in range(batch_size)])
+
+    advantages, returns = compute_flow_grpo_outcome_advantage(
+        token_level_rewards=token_level_rewards,
+        response_mask=response_mask,
+        index=uid,
+        norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
+        global_std=global_std,
+    )
+
+    assert advantages.shape == returns.shape == (batch_size, steps)
+
+
 def test_compute_policy_loss_flow_grpo() -> None:
     """Test flow-GRPO policy loss computation."""
 

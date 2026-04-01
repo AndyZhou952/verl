@@ -44,8 +44,5 @@ val_kwargs:
   # number of inference steps for diffusion model rollout
   num_inference_steps: 40
 
-  # noise level for diffusion model rollout
-  noise_level: 0.0
-
   # random seed for validation
   seed: 42

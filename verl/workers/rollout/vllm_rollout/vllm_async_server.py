@@ -601,7 +601,21 @@ class vLLMHttpServer:
         self.global_steps = global_steps
 
     async def wait_for_requests_to_drain(self):
-        await self.engine.wait_for_requests_to_drain()
+        wait_for_requests_to_drain = getattr(self.engine, "wait_for_requests_to_drain", None)
+        if callable(wait_for_requests_to_drain):
+            await wait_for_requests_to_drain()
+            return
+
+        # vLLM-Omni's AsyncOmni does not expose wait_for_requests_to_drain(),
+        # but it still tracks in-flight requests via the output processor.
+        output_processor = getattr(self.engine, "output_processor", None)
+        request_states = getattr(output_processor, "request_states", None)
+        if request_states is None:
+            logger.warning("Engine does not expose request drain APIs; skipping drain wait before sleep")
+            return
+
+        while request_states:
+            await asyncio.sleep(0.05)
 
     async def abort_all_requests(self, reset_prefix_cache: bool = True) -> dict[str, Any]:
         """Abort all ongoing generation requests.

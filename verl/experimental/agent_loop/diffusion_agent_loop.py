@@ -75,7 +75,7 @@ class _InternalDiffusionAgentLoopOutput(DiffusionAgentLoopOutput):
     attention_mask: torch.Tensor
     """Padded attention mask."""
     response_logprobs: Optional[torch.Tensor] = None
-    """Log probabilities for the response tokens."""
+    """Log probabilities over denoising timesteps."""
     multi_modal_inputs: Optional[dict[str, torch.Tensor]] = None
     """Multi-modal inputs for processors (e.g. pixel_values, image_grid_thw, video_grid_thw)."""
     extra_fields: dict[str, Any] = {}
@@ -208,7 +208,7 @@ class DiffusionAgentLoopWorker:
 
     async def _agent_loop_postprocess(self, output, **kwargs) -> _InternalDiffusionAgentLoopOutput:
         """Perform post-processing operations on the output of each individual agent loop."""
-        # handling extra tensor ouputs from vllm-omni, like prompt embedding, etc.
+        # Pad extra tensor outputs from vllm-omni (e.g. prompt embeddings).
         extra_fields = {}
         for k, v in output.extra_fields.items():
             if isinstance(v, torch.Tensor):

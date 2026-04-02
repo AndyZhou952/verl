@@ -40,13 +40,12 @@ from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.config import AlgoConfig
 from verl.trainer.ppo import core_algos
 from verl.trainer.ppo.core_algos import AdvantageEstimator
-from verl.trainer.ppo.metric_utils import (
-    compute_data_metrics,
-    compute_throughout_metrics,
-    compute_timing_metrics,
-    compute_variance_proxy_metrics,
-    process_validation_metrics,
+from verl.trainer.diffusion.diffusion_metric_utils import (
+    compute_data_metrics_diffusion,
+    compute_throughout_metrics_diffusion,
+    compute_timing_metrics_diffusion,
 )
+from verl.trainer.ppo.metric_utils import compute_variance_proxy_metrics, process_validation_metrics
 from verl.trainer.ppo.reward import extract_reward
 from verl.trainer.ppo.utils import Role, WorkerType, need_reference_policy, need_reward_model
 from verl.utils import tensordict_utils as tu
@@ -63,11 +62,14 @@ from verl.workers.utils.padding import embeds_padding_2_no_padding
 def compute_response_mask(data: DataProto):
     """Compute the attention mask for latents
 
+    For diffusion models, every denoising timestep is a valid "response" step,
+    so the mask is all-ones with shape [batch, num_timesteps].
+
     Args:
         data (DataProto): The data containing batched model outputs and inputs.
 
     Returns:
-        torch.Tensor: The attention mask for the response tokens.
+        torch.Tensor: The response mask over denoising timesteps, shape [batch, num_timesteps].
     """
     all_latents = data.batch["all_latents"]
     b, t, _, _ = all_latents.shape
@@ -108,7 +110,7 @@ def compute_advantage(
 
         # Call compute_grpo_outcome_advantage with parameters matching its definition
         advantages, returns = core_algos.compute_flow_grpo_outcome_advantage(
-            token_level_rewards=data.batch["token_level_rewards"],
+            token_level_rewards=data.batch["sample_level_rewards"],
             response_mask=grpo_calculation_mask,
             index=data.non_tensor_batch["uid"],
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
@@ -120,7 +122,7 @@ def compute_advantage(
         # handle all other adv estimator type other than GAE and GRPO
         adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
         adv_kwargs = {
-            "token_level_rewards": data.batch["token_level_rewards"],
+            "token_level_rewards": data.batch["sample_level_rewards"],
             "response_mask": data.batch["response_mask"],
             "config": config,
         }
@@ -344,9 +346,9 @@ class RayFlowGRPOTrainer:
             rollout_data_dir (str): Directory path to save the rollout data
         """
         with marked_timer("dump_rollout_generations", timing_raw, color="green"):
-            inputs = self.tokenizer.batch_decode(batch.batch["prompts"], skip_special_tokens=True)
+            inputs = self.tokenizer.batch_decode(batch.batch["input_ids"], skip_special_tokens=True)
             outputs = batch.batch["responses"]
-            scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
+            scores = batch.batch["sample_level_scores"].sum(-1).cpu().tolist()
             sample_gts = [item.non_tensor_batch.get("reward_model", {}).get("ground_truth", None) for item in batch]
 
             reward_extra_infos_to_dump = reward_extra_infos_dict.copy()
@@ -862,16 +864,11 @@ class RayFlowGRPOTrainer:
         ref_log_prob = tu.get_tensordict(
             {"ref_log_prob": log_probs.float(), "ref_prev_sample_mean": prev_sample_mean.float()}
         )
-        ref_log_prob = DataProto.from_tensordict(ref_log_prob)
-        return ref_log_prob
+        return DataProto.from_tensordict(ref_log_prob)
 
     def _compute_old_log_prob(self, batch: DataProto):
-        # TODO: remove step 1, 2, 4 after we make the whole training tensordict and padding free
-        # step 1: convert dataproto to tensordict.
         batch_td = batch.to_tensordict()
-        # step 2: convert from padding to nopadding
         batch_td = embeds_padding_2_no_padding(batch_td)
-        # step 3: add meta info
         tu.assign_non_tensor(
             batch_td,
             compute_loss=False,
@@ -880,12 +877,9 @@ class RayFlowGRPOTrainer:
             vae_scale_factor=self.config.actor_rollout_ref.model.get("vae_scale_factor", 8),
         )
         output = self.actor_rollout_wg.compute_log_prob(batch_td)
-        # gather output
         log_probs = tu.get(output, "log_probs")
-        # step 5: rebuild a tensordict and convert to dataproto
         old_log_prob = tu.get_tensordict({"old_log_probs": log_probs.float()})
-        old_log_prob = DataProto.from_tensordict(old_log_prob)
-        return old_log_prob
+        return DataProto.from_tensordict(old_log_prob)
 
     def _update_actor(self, batch: DataProto) -> DataProto:
         rollout_config = self.config.actor_rollout_ref.rollout
@@ -914,9 +908,7 @@ class RayFlowGRPOTrainer:
         actor_output = self.actor_rollout_wg.update_actor(batch_td)
         actor_output = tu.get(actor_output, "metrics")
         actor_output = rename_dict(actor_output, "actor/")
-        actor_output = DataProto.from_single_dict(data={}, meta_info={"metrics": actor_output})
-
-        return actor_output
+        return DataProto.from_single_dict(data={}, meta_info={"metrics": actor_output})
 
     def fit(self):
         """
@@ -1065,12 +1057,12 @@ class RayFlowGRPOTrainer:
                     with marked_timer("adv", timing_raw, color="brown"):
                         # we combine with rule-based rm
                         reward_extra_infos_dict: dict[str, list]
-                        batch.batch["token_level_scores"] = reward_tensor
+                        batch.batch["sample_level_scores"] = reward_tensor
 
                         if reward_extra_infos_dict:
                             batch.non_tensor_batch.update({k: np.array(v) for k, v in reward_extra_infos_dict.items()})
 
-                        batch.batch["token_level_rewards"] = batch.batch["token_level_scores"]
+                        batch.batch["sample_level_rewards"] = batch.batch["sample_level_rewards"]
 
                         # Compute rollout correction: IS weights, rejection sampling, and metrics
                         # Only runs in decoupled mode (computes once per batch using stable π_old)
@@ -1173,11 +1165,11 @@ class RayFlowGRPOTrainer:
                     }
                 )
                 # collect metrics
-                metrics.update(compute_data_metrics(batch=batch, use_critic=False))
-                metrics.update(compute_timing_metrics(batch=batch, timing_raw=timing_raw))
+                metrics.update(compute_data_metrics_diffusion(batch=batch))
+                metrics.update(compute_timing_metrics_diffusion(timing_raw=timing_raw))
                 # TODO: implement actual tflpo and theoretical tflpo
                 n_gpus = self.resource_pool_manager.get_n_gpus()
-                metrics.update(compute_throughout_metrics(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
+                metrics.update(compute_throughout_metrics_diffusion(batch=batch, timing_raw=timing_raw, n_gpus=n_gpus))
                 # compute variance proxy metrics
                 gradient_norm = metrics.get("actor/grad_norm", None)
                 metrics.update(compute_variance_proxy_metrics(batch=batch, gradient_norm=gradient_norm))

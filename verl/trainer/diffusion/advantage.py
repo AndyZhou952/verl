@@ -3,7 +3,7 @@ from typing import Any, Optional
 import torch
 
 from verl import DataProto
-from verl.trainer.config import AlgoConfig
+from verl.trainer.config import DiffusionAlgoConfig
 from verl.trainer.diffusion import diffusion_algos
 
 DIFFUSION_ADV_ESTIMATOR_REGISTRY = diffusion_algos.DIFFUSION_ADV_ESTIMATOR_REGISTRY
@@ -25,7 +25,7 @@ def compute_response_mask(data: DataProto):
 
 def _build_diffusion_advantage_kwargs(
     data: DataProto,
-    config: Optional[AlgoConfig] = None,
+    config: Optional[DiffusionAlgoConfig] = None,
 ) -> dict[str, Any]:
     """Build diffusion-facing advantage kwargs from diffusion batch fields."""
     if "response_mask" not in data.batch.keys():
@@ -47,7 +47,7 @@ def compute_advantage(
     adv_estimator: str,
     norm_adv_by_std_in_grpo: bool = True,
     global_std: bool = True,
-    config: Optional[AlgoConfig] = None,
+    config: Optional[DiffusionAlgoConfig] = None,
 ) -> DataProto:
     """Compute diffusion advantages using the diffusion-local registry."""
     diffusion_adv_kwargs = _build_diffusion_advantage_kwargs(data, config=config)

@@ -634,7 +634,7 @@ algorithm:
     bypass_mode: false
     loss_type: ppo_clip
     rollout_is_batch_normalize: false
-  _target_: verl.trainer.config.AlgoConfig
+  _target_: verl.trainer.config.DiffusionAlgoConfig
   adv_estimator: flow_grpo
   norm_adv_by_std_in_grpo: true
   global_std: true

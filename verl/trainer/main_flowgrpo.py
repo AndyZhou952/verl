@@ -25,8 +25,8 @@ from omegaconf import OmegaConf
 
 from verl.experimental.reward_loop import migrate_legacy_reward_impl
 from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
+from verl.trainer.diffusion.utils import need_diffusion_reference_policy
 from verl.trainer.ppo.ray_diffusion_trainer import RayFlowGRPOTrainer
-from verl.trainer.ppo.utils import need_reference_policy
 from verl.utils.config import validate_config
 from verl.utils.device import auto_set_device, is_cuda_available
 
@@ -119,7 +119,7 @@ class TaskRunner:
         if lora_rank <= 0:
             lora_rank = config.actor_rollout_ref.model.get("lora_rank", 0)
         ref_in_actor = lora_rank > 0 or config.actor_rollout_ref.model.get("lora_adapter_path") is not None
-        if need_reference_policy(config) and not ref_in_actor:
+        if need_diffusion_reference_policy(config) and not ref_in_actor:
             role = Role.ActorRolloutRef
         else:
             role = Role.ActorRollout
@@ -191,7 +191,7 @@ class TaskRunner:
 
         validate_config(
             config=config,
-            use_reference_policy=need_reference_policy(config),
+            use_reference_policy=need_diffusion_reference_policy(config),
             use_critic=False,
         )
 

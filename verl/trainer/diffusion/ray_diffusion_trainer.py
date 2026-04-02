@@ -21,7 +21,7 @@ import os
 import uuid
 from collections import defaultdict
 from pprint import pprint
-from typing import Any, Optional
+from typing import Any, Optional, cast
 
 import numpy as np
 import torch
@@ -37,16 +37,17 @@ from verl.experimental.dataset.sampler import AbstractCurriculumSampler
 from verl.protocol import pad_dataproto_to_divisor, unpad_dataproto
 from verl.single_controller.ray import RayClassWithInitArgs, RayWorkerGroup, ResourcePoolManager
 from verl.single_controller.ray.base import create_colocated_worker_cls
-from verl.trainer.config import AlgoConfig
+from verl.trainer.config import DiffusionAlgoConfig
 from verl.trainer.diffusion.advantage import compute_advantage, compute_response_mask
 from verl.trainer.diffusion.diffusion_metric_utils import (
     compute_data_metrics_diffusion,
     compute_throughout_metrics_diffusion,
     compute_timing_metrics_diffusion,
 )
+from verl.trainer.diffusion.utils import need_diffusion_reference_policy
 from verl.trainer.ppo.metric_utils import compute_variance_proxy_metrics, process_validation_metrics
 from verl.trainer.ppo.reward import extract_reward
-from verl.trainer.ppo.utils import Role, WorkerType, need_reference_policy, need_reward_model
+from verl.trainer.ppo.utils import Role, WorkerType, need_reward_model
 from verl.utils import tensordict_utils as tu
 from verl.utils.checkpoint.checkpoint_manager import find_latest_ckpt_path, should_save_ckpt_esi
 from verl.utils.config import omega_conf_to_dataclass
@@ -115,7 +116,7 @@ class RayFlowGRPOTrainer:
 
         self.role_worker_mapping = role_worker_mapping
         self.resource_pool_manager = resource_pool_manager
-        self.use_reference_policy = need_reference_policy(self.config)
+        self.use_reference_policy = need_diffusion_reference_policy(self.config)
 
         self.use_rm = need_reward_model(self.config)
         self.ray_worker_group_cls = ray_worker_group_cls
@@ -996,16 +997,17 @@ class RayFlowGRPOTrainer:
                             metrics.update(is_metrics)
 
                         # compute advantages, executed on the driver process
+                        algorithm_config = cast(DiffusionAlgoConfig, self.config.algorithm)
                         norm_adv_by_std_in_grpo = self.config.algorithm.get(
                             "norm_adv_by_std_in_grpo", True
                         )  # GRPO adv normalization factor
 
                         batch = compute_advantage(
                             batch,
-                            adv_estimator=self.config.algorithm.adv_estimator,
+                            adv_estimator=algorithm_config.adv_estimator,
                             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
-                            global_std=self.config.algorithm.global_std,
-                            config=self.config.algorithm,
+                            global_std=algorithm_config.global_std,
+                            config=algorithm_config,
                         )
 
                     # update actor

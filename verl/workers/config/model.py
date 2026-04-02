@@ -273,6 +273,7 @@ class DiffusionModelConfig(BaseConfig):
     external_lib: Optional[str] = None
 
     enable_gradient_checkpointing: bool = True
+    use_remove_padding: bool = True
 
     # lora related.
     lora_rank: int = 32

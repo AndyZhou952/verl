@@ -47,9 +47,9 @@ mini_bsz=${micro_bsz}
 train_batch_size=$((mini_bsz * n_resp_per_prompt))
 
 # ---------------------------------------------------------------------------
-# Run the trainer
+# Run the dedicated FlowGRPO trainer
 # ---------------------------------------------------------------------------
-PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_ppo \
+PYTHONUNBUFFERED=1 python3 -m verl.trainer.main_flowgrpo \
     --config-name=diffusion_trainer \
     algorithm.adv_estimator=flow_grpo \
     data.train_files="${TRAIN_FILES}" \

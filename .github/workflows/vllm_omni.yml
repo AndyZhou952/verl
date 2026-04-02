@@ -64,7 +64,8 @@ on:
       - "tests/special_e2e/run_flowgrpo_diffusion.sh"
       - "tests/special_e2e/create_dummy_diffusion_data.py"
       - "verl/workers/rollout/vllm_rollout/vllm_omni_async_server.py"
-      - "verl/trainer/ppo/ray_diffusion_trainer.py"
+      - "verl/trainer/diffusion/ray_diffusion_trainer.py"
+      - "verl/trainer/main_flowgrpo.py"
       - "verl/trainer/config/diffusion_trainer.yaml"
 
 # Cancel jobs on the same ref if a new one is triggered

@@ -25,8 +25,8 @@ from omegaconf import OmegaConf
 
 from verl.experimental.reward_loop import migrate_legacy_reward_impl
 from verl.trainer.constants_ppo import get_ppo_ray_runtime_env
+from verl.trainer.diffusion.ray_diffusion_trainer import RayFlowGRPOTrainer
 from verl.trainer.diffusion.utils import need_diffusion_reference_policy
-from verl.trainer.ppo.ray_diffusion_trainer import RayFlowGRPOTrainer
 from verl.utils.config import validate_config
 from verl.utils.device import auto_set_device, is_cuda_available
 

@@ -39,8 +39,6 @@ from verl.single_controller.ray import RayClassWithInitArgs, RayWorkerGroup, Res
 from verl.single_controller.ray.base import create_colocated_worker_cls
 from verl.trainer.config import AlgoConfig
 from verl.trainer.diffusion.advantage import compute_advantage, compute_response_mask
-from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.core_algos import AdvantageEstimator
 from verl.trainer.diffusion.diffusion_metric_utils import (
     compute_data_metrics_diffusion,
     compute_throughout_metrics_diffusion,
@@ -761,11 +759,8 @@ class RayFlowGRPOTrainer:
                 self.ref_policy_wg.stop_profile()
 
     def _compute_ref_log_prob(self, batch: DataProto) -> DataProto:
-        # step 1: convert dataproto to tensordict.
         batch_td = batch.to_tensordict()
-        # step 2: convert from padding to nopadding
         batch_td = embeds_padding_2_no_padding(batch_td)
-        # step 3: add meta info
         metadata = {
             "compute_loss": False,
             "height": self.config.actor_rollout_ref.model.height,
@@ -782,7 +777,6 @@ class RayFlowGRPOTrainer:
         # gather output
         log_probs = tu.get(output, "log_probs")
         prev_sample_mean = tu.get(output, "prev_sample_mean")
-        # step 5: rebuild a tensordict and convert to dataproto
         ref_log_prob = tu.get_tensordict(
             {"ref_log_prob": log_probs.float(), "ref_prev_sample_mean": prev_sample_mean.float()}
         )

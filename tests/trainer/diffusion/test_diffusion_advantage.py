@@ -7,12 +7,12 @@ import torch
 from verl import DataProto
 from verl.trainer.diffusion import diffusion_algos
 from verl.trainer.diffusion.advantage import (
+    FLOW_GRPO_ADV_ESTIMATOR,
     _build_diffusion_advantage_kwargs,
     compute_advantage,
     compute_response_mask,
 )
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.core_algos import AdvantageEstimator
 
 
 def _make_diffusion_batch(
@@ -50,7 +50,7 @@ def test_build_diffusion_advantage_kwargs_maps_diffusion_batch_fields() -> None:
 
     adv_kwargs = _build_diffusion_advantage_kwargs(data, config=config)
 
-    assert torch.equal(adv_kwargs["token_level_rewards"], data.batch["sample_level_rewards"])
+    assert torch.equal(adv_kwargs["sample_level_rewards"], data.batch["sample_level_rewards"])
     assert torch.equal(adv_kwargs["response_mask"], data.batch["response_mask"])
     assert adv_kwargs["index"] is data.non_tensor_batch["uid"]
     assert torch.equal(adv_kwargs["reward_baselines"], data.batch["reward_baselines"])
@@ -61,7 +61,7 @@ def test_compute_advantage_uses_diffusion_module_for_flow_grpo(monkeypatch: pyte
     data = _make_diffusion_batch()
 
     def fake_flow_grpo(**kwargs):
-        assert torch.equal(kwargs["token_level_rewards"], data.batch["sample_level_rewards"])
+        assert torch.equal(kwargs["sample_level_rewards"], data.batch["sample_level_rewards"])
         assert kwargs["index"] is data.non_tensor_batch["uid"]
         response_mask = kwargs["response_mask"]
         advantages = torch.full(response_mask.shape, 2.0)
@@ -72,7 +72,7 @@ def test_compute_advantage_uses_diffusion_module_for_flow_grpo(monkeypatch: pyte
 
     result = compute_advantage(
         data,
-        adv_estimator=AdvantageEstimator.FLOW_GRPO,
+        adv_estimator=FLOW_GRPO_ADV_ESTIMATOR,
         norm_adv_by_std_in_grpo=False,
         global_std=False,
     )
@@ -109,7 +109,7 @@ def test_compute_advantage_dispatches_generic_estimator_with_diffusion_kwargs(
 
 
 def test_flow_grpo_estimator_registered_from_diffusion_module() -> None:
-    assert core_algos.get_adv_estimator_fn(AdvantageEstimator.FLOW_GRPO) is diffusion_algos.compute_flow_grpo_outcome_advantage
+    assert core_algos.get_adv_estimator_fn(FLOW_GRPO_ADV_ESTIMATOR) is diffusion_algos.compute_flow_grpo_outcome_advantage
 
 
 @pytest.mark.parametrize("norm_adv_by_std_in_grpo", [True, False])
@@ -117,12 +117,12 @@ def test_flow_grpo_estimator_registered_from_diffusion_module() -> None:
 def test_flow_grpo_advantage_return(norm_adv_by_std_in_grpo: bool, global_std: bool) -> None:
     batch_size = 8
     steps = 10
-    token_level_rewards = torch.randn((batch_size, 1), dtype=torch.float32)
+    sample_level_rewards = torch.randn((batch_size, 1), dtype=torch.float32)
     response_mask = torch.ones((batch_size, steps), dtype=torch.int32)
     uid = np.array([f"uid-{idx}" for idx in range(batch_size)], dtype=object)
 
     advantages, returns = diffusion_algos.compute_flow_grpo_outcome_advantage(
-        token_level_rewards=token_level_rewards,
+        sample_level_rewards=sample_level_rewards,
         response_mask=response_mask,
         index=uid,
         norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,

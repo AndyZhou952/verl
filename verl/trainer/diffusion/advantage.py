@@ -6,7 +6,8 @@ from verl import DataProto
 from verl.trainer.config import AlgoConfig
 from verl.trainer.diffusion import diffusion_algos
 from verl.trainer.ppo import core_algos
-from verl.trainer.ppo.core_algos import AdvantageEstimator
+
+FLOW_GRPO_ADV_ESTIMATOR = diffusion_algos.FLOW_GRPO_ADV_ESTIMATOR
 
 
 def compute_response_mask(data: DataProto):
@@ -24,12 +25,12 @@ def _build_diffusion_advantage_kwargs(
     data: DataProto,
     config: Optional[AlgoConfig] = None,
 ) -> dict[str, Any]:
-    """Build registry-compatible advantage kwargs from diffusion batch fields."""
+    """Build diffusion-facing advantage kwargs from diffusion batch fields."""
     if "response_mask" not in data.batch.keys():
         data.batch["response_mask"] = compute_response_mask(data)
 
     adv_kwargs = {
-        "token_level_rewards": data.batch["sample_level_rewards"],
+        "sample_level_rewards": data.batch["sample_level_rewards"],
         "response_mask": data.batch["response_mask"],
         "config": config,
     }
@@ -40,24 +41,31 @@ def _build_diffusion_advantage_kwargs(
     return adv_kwargs
 
 
+def _build_registry_advantage_kwargs(diffusion_adv_kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Translate diffusion kwargs to the shared registry contract."""
+    registry_kwargs = dict(diffusion_adv_kwargs)
+    registry_kwargs["token_level_rewards"] = registry_kwargs.pop("sample_level_rewards")
+    return registry_kwargs
+
+
 def compute_advantage(
     data: DataProto,
-    adv_estimator: AdvantageEstimator,
+    adv_estimator: str,
     norm_adv_by_std_in_grpo: bool = True,
     global_std: bool = True,
     config: Optional[AlgoConfig] = None,
 ) -> DataProto:
     """Compute diffusion advantages using the shared estimator registry."""
-    adv_kwargs = _build_diffusion_advantage_kwargs(data, config=config)
-    if adv_estimator == AdvantageEstimator.FLOW_GRPO:
+    diffusion_adv_kwargs = _build_diffusion_advantage_kwargs(data, config=config)
+    if adv_estimator == FLOW_GRPO_ADV_ESTIMATOR:
         advantages, returns = diffusion_algos.compute_flow_grpo_outcome_advantage(
-            **adv_kwargs,
+            **diffusion_adv_kwargs,
             norm_adv_by_std_in_grpo=norm_adv_by_std_in_grpo,
             global_std=global_std,
         )
     else:
         adv_estimator_fn = core_algos.get_adv_estimator_fn(adv_estimator)
-        advantages, returns = adv_estimator_fn(**adv_kwargs)
+        advantages, returns = adv_estimator_fn(**_build_registry_advantage_kwargs(diffusion_adv_kwargs))
 
     data.batch["advantages"] = advantages
     data.batch["returns"] = returns

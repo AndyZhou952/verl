@@ -20,13 +20,15 @@ import numpy as np
 import torch
 from omegaconf import DictConfig
 
-from verl.trainer.ppo.core_algos import AdvantageEstimator, register_adv_est, register_policy_loss
+from verl.trainer.ppo.core_algos import register_adv_est, register_policy_loss
 from verl.workers.config import ActorConfig
 
+FLOW_GRPO_ADV_ESTIMATOR = "flow_grpo"
 
-@register_adv_est(AdvantageEstimator.FLOW_GRPO)
+
+@register_adv_est(FLOW_GRPO_ADV_ESTIMATOR)
 def compute_flow_grpo_outcome_advantage(
-    token_level_rewards: torch.Tensor,
+    sample_level_rewards: torch.Tensor,
     response_mask: torch.Tensor,
     index: np.ndarray,
     epsilon: float = 1e-4,
@@ -39,7 +41,7 @@ def compute_flow_grpo_outcome_advantage(
     (with only one scalar reward for each response).
 
     Args:
-        token_level_rewards: `(torch.Tensor)`
+        sample_level_rewards: `(torch.Tensor)`
             shape is (bs, ), (bs, 1) or (bs, response_length)
         response_mask: `(torch.Tensor)`
             shape is (bs, response_length)
@@ -64,7 +66,7 @@ def compute_flow_grpo_outcome_advantage(
         Returns: `(torch.Tensor)`
             shape is (bs, response_length)
     """
-    scores = token_level_rewards
+    scores = sample_level_rewards
     if scores.ndim == 1:
         scores = scores.unsqueeze(-1)
     scores = scores.expand_as(response_mask).clone()

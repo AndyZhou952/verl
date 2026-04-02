@@ -20,13 +20,33 @@ import numpy as np
 import torch
 from omegaconf import DictConfig
 
-from verl.trainer.ppo.core_algos import register_adv_est, register_policy_loss
+from verl.trainer.ppo.core_algos import register_policy_loss
 from verl.workers.config import ActorConfig
 
 FLOW_GRPO_ADV_ESTIMATOR = "flow_grpo"
+DIFFUSION_ADV_ESTIMATOR_REGISTRY: dict[str, Any] = {}
 
 
-@register_adv_est(FLOW_GRPO_ADV_ESTIMATOR)
+def register_diffusion_adv_est(name: str):
+    def decorator(fn):
+        if name in DIFFUSION_ADV_ESTIMATOR_REGISTRY and DIFFUSION_ADV_ESTIMATOR_REGISTRY[name] != fn:
+            raise ValueError(
+                f"Diffusion advantage estimator {name} has already been registered: "
+                f"{DIFFUSION_ADV_ESTIMATOR_REGISTRY[name]} vs {fn}"
+            )
+        DIFFUSION_ADV_ESTIMATOR_REGISTRY[name] = fn
+        return fn
+
+    return decorator
+
+
+def get_diffusion_adv_estimator_fn(name: str):
+    if name not in DIFFUSION_ADV_ESTIMATOR_REGISTRY:
+        raise ValueError(f"Unknown diffusion advantage estimator: {name}")
+    return DIFFUSION_ADV_ESTIMATOR_REGISTRY[name]
+
+
+@register_diffusion_adv_est(FLOW_GRPO_ADV_ESTIMATOR)
 def compute_flow_grpo_outcome_advantage(
     sample_level_rewards: torch.Tensor,
     response_mask: torch.Tensor,

@@ -8,11 +8,12 @@ from verl import DataProto
 from verl.trainer.diffusion import diffusion_algos
 from verl.trainer.diffusion.advantage import (
     FLOW_GRPO_ADV_ESTIMATOR,
+    get_diffusion_adv_estimator_fn,
+    register_diffusion_adv_est,
     _build_diffusion_advantage_kwargs,
     compute_advantage,
     compute_response_mask,
 )
-from verl.trainer.ppo import core_algos
 
 
 def _make_diffusion_batch(
@@ -68,7 +69,7 @@ def test_compute_advantage_uses_diffusion_module_for_flow_grpo(monkeypatch: pyte
         returns = torch.full(response_mask.shape, 3.0)
         return advantages, returns
 
-    monkeypatch.setattr(diffusion_algos, "compute_flow_grpo_outcome_advantage", fake_flow_grpo)
+    monkeypatch.setitem(diffusion_algos.DIFFUSION_ADV_ESTIMATOR_REGISTRY, FLOW_GRPO_ADV_ESTIMATOR, fake_flow_grpo)
 
     result = compute_advantage(
         data,
@@ -88,7 +89,7 @@ def test_compute_advantage_dispatches_generic_estimator_with_diffusion_kwargs(
     config = {"alpha": 0.1}
 
     def fake_estimator(**kwargs):
-        assert torch.equal(kwargs["token_level_rewards"], data.batch["sample_level_rewards"])
+        assert torch.equal(kwargs["sample_level_rewards"], data.batch["sample_level_rewards"])
         assert torch.equal(kwargs["response_mask"], compute_response_mask(data))
         assert kwargs["index"] is data.non_tensor_batch["uid"]
         assert torch.equal(kwargs["reward_baselines"], data.batch["reward_baselines"])
@@ -96,7 +97,7 @@ def test_compute_advantage_dispatches_generic_estimator_with_diffusion_kwargs(
         response_mask = kwargs["response_mask"]
         return torch.ones_like(response_mask, dtype=torch.float32), torch.zeros_like(response_mask, dtype=torch.float32)
 
-    monkeypatch.setitem(core_algos.ADV_ESTIMATOR_REGISTRY, "diffusion_test_estimator", fake_estimator)
+    monkeypatch.setitem(diffusion_algos.DIFFUSION_ADV_ESTIMATOR_REGISTRY, "diffusion_test_estimator", fake_estimator)
 
     result = compute_advantage(
         data,
@@ -109,7 +110,41 @@ def test_compute_advantage_dispatches_generic_estimator_with_diffusion_kwargs(
 
 
 def test_flow_grpo_estimator_registered_from_diffusion_module() -> None:
-    assert core_algos.get_adv_estimator_fn(FLOW_GRPO_ADV_ESTIMATOR) is diffusion_algos.compute_flow_grpo_outcome_advantage
+    assert get_diffusion_adv_estimator_fn(FLOW_GRPO_ADV_ESTIMATOR) is diffusion_algos.compute_flow_grpo_outcome_advantage
+
+
+def test_register_diffusion_adv_est_dispatches_without_registry_bridge(monkeypatch: pytest.MonkeyPatch) -> None:
+    estimator_name = "test_diffusion_estimator"
+    data = _make_diffusion_batch(include_reward_baselines=True)
+    config = {"beta": 0.5}
+
+    @register_diffusion_adv_est(estimator_name)
+    def test_diffusion_estimator(**kwargs):
+        assert torch.equal(kwargs["sample_level_rewards"], data.batch["sample_level_rewards"])
+        assert torch.equal(kwargs["response_mask"], compute_response_mask(data))
+        assert kwargs["index"] is data.non_tensor_batch["uid"]
+        assert torch.equal(kwargs["reward_baselines"], data.batch["reward_baselines"])
+        assert kwargs["config"] is config
+        response_mask = kwargs["response_mask"]
+        return torch.full(response_mask.shape, 4.0), torch.full(response_mask.shape, 5.0)
+
+    result = compute_advantage(
+        data,
+        adv_estimator=estimator_name,
+        config=config,
+    )
+
+    assert torch.equal(result.batch["advantages"], torch.full((4, 6), 4.0))
+    assert torch.equal(result.batch["returns"], torch.full((4, 6), 5.0))
+
+    monkeypatch.delitem(diffusion_algos.DIFFUSION_ADV_ESTIMATOR_REGISTRY, estimator_name, raising=False)
+
+
+def test_unknown_diffusion_adv_estimator_raises_clear_error() -> None:
+    data = _make_diffusion_batch()
+
+    with pytest.raises(ValueError, match="Unknown diffusion advantage estimator"):
+        compute_advantage(data, adv_estimator="does_not_exist")
 
 
 @pytest.mark.parametrize("norm_adv_by_std_in_grpo", [True, False])

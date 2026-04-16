@@ -91,6 +91,11 @@ Run the training script:
 
    bash examples/flowgrpo_trainer/run_qwen_image_ocr_lora.sh
 
+Optional KL loss tuning:
+
+- ``actor_rollout_ref.actor.use_kl_loss=True``
+- ``actor_rollout_ref.actor.kl_loss_coef=0.001``
+
 The script assumes the following ``$HOME`` layout:
 
 - dataset files at ``$HOME/data/ocr/train.parquet`` and ``$HOME/data/ocr/test.parquet``,

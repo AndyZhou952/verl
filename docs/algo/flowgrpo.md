@@ -125,30 +125,6 @@ the rollout section is the main place to override sampling behavior.
 For an end-to-end OCR training walkthrough, including dataset preparation and
 the full runnable command, see `docs/start/flowgrpo_quickstart.rst`.
 
-## Variants
-
-### Flow-GRPO-Fast
-
-Flow-GRPO-Fast accelerates training by confining stochasticity to only one or two denoising steps per trajectory:
-
-1. Generate a deterministic ODE trajectory for each prompt.
-2. At a randomly chosen intermediate step, inject noise and switch to SDE sampling to produce the group.
-3. Continue the remaining steps with ODE sampling.
-
-This significantly reduces training cost: only the selected step(s) require gradient computation, and sampling before the branching point does not need group expansion. Flow-GRPO-Fast with 2 training steps matches full Flow-GRPO reward performance.
-
-```bash
-bash examples/flowgrpo_trainer/run_flowgrpo_fast.sh
-```
-
-### Async Reward
-
-For reward models that are expensive to evaluate (e.g., a VLM judge), the reward model can be allocated its own dedicated GPU resource pool and run asynchronously alongside the policy. This avoids blocking policy training on reward computation.
-
-```bash
-bash examples/flowgrpo_trainer/run_flowgrpo_async_reward.sh
-```
-
 ## Reference Example
 
 Standard LoRA training with OCR reward (Qwen-Image, 4 GPUs) using the current

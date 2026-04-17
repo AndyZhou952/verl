@@ -23,7 +23,7 @@ Prerequisite
 
 .. code-block:: bash
 
-   pip install "vllm==0.18" "vllm-omni==0.18" python-Levenshtein
+   pip install "vllm==0.18" "vllm-omni==0.18" Levenshtein
 
 - Use a machine with ``4`` GPUs for the provided example script.
 - Run the commands below from the repository root.
@@ -43,18 +43,18 @@ The preprocessing script converts the raw dataset into parquet files that contai
 Step 1: Prepare the dataset
 ---------------------------
 
-First, obtain the raw OCR dataset from the original Flow-GRPO repository and place it on local disk. Then preprocess it into ``train.parquet`` and ``test.parquet``:
+First, obtain the raw OCR dataset from the original Flow-GRPO repository and place it under ``$HOME/data/ocr`` on local disk. Then preprocess it into ``train.parquet`` and ``test.parquet``:
 
 .. code-block:: bash
 
    python3 examples/flowgrpo_trainer/data_process/qwenimage_ocr.py \
-     --local_dataset_path ~/dataset/ocr \
-     --local_save_dir ~/data/ocr
+     --local_dataset_path $HOME/data/ocr \
+     --local_save_dir $HOME/data/ocr
 
 The command above writes:
 
-- ``~/data/ocr/train.parquet``
-- ``~/data/ocr/test.parquet``
+- ``$HOME/data/ocr/train.parquet``
+- ``$HOME/data/ocr/test.parquet``
 
 These parquet files are the inputs consumed by the FlowGRPO training script.
 

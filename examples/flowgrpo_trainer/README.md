@@ -11,7 +11,7 @@ First, follow the standard `verl` installation guide in `docs/start/install.rst`
 Then install the FlowGRPO example-specific dependencies in the same environment:
 
 ```bash
-pip install "vllm==0.18" "vllm-omni==0.18" python-Levenshtein
+pip install "vllm==0.18" "vllm-omni==0.18" Levenshtein
 ```
 
 The provided script is configured for a single node with `4` GPUs.
@@ -22,18 +22,18 @@ Obtain the raw OCR dataset from the original Flow-GRPO repository:
 
 - https://github.com/yifan123/flow_grpo/tree/main/dataset/ocr
 
-Then preprocess it into parquet files:
+Place the raw dataset under `$HOME/data/ocr`, then preprocess it into parquet files:
 
 ```bash
 python3 examples/flowgrpo_trainer/data_process/qwenimage_ocr.py \
-  --local_dataset_path ~/dataset/ocr \
-  --local_save_dir ~/data/ocr
+  --local_dataset_path $HOME/data/ocr \
+  --local_save_dir $HOME/data/ocr
 ```
 
 This produces:
 
-- `~/data/ocr/train.parquet`
-- `~/data/ocr/test.parquet`
+- `$HOME/data/ocr/train.parquet`
+- `$HOME/data/ocr/test.parquet`
 
 ## Prepare the models
 

@@ -103,9 +103,11 @@ the rollout section is the main place to override sampling behavior.
 - `actor_rollout_ref.rollout.guidance_scale`: Distilled guidance scale for
   models that expose a guidance embedding; keep `null` to disable it.
 
-- `actor_rollout_ref.rollout.engine_kwargs.vllm_omni.custom_pipeline`:
-  Required by the `vllm_omni` Qwen-Image example to register the custom
-  pipeline implementation.
+- `actor_rollout_ref.rollout.external_lib`: Python module path imported on
+  every rollout worker before the engine starts. Use this to register custom
+  pipeline implementations (e.g., `examples.flowgrpo_trainer.vllm_omni_impl`
+  for the Qwen-Image `vllm_omni` example). The module must call
+  `@VllmOmniPipelineBase.register(...)` at import time.
 
 #### Model
 
@@ -113,6 +115,84 @@ the rollout section is the main place to override sampling behavior.
 
 - `actor_rollout_ref.model.tokenizer_path`: Optional tokenizer path if it is
   not located under the model path.
+
+#### Batch size
+
+FlowGRPO uses three nested batch-size parameters that operate at different
+stages of the training loop. They address different concerns (RL sample
+diversity, multi-epoch reuse, and GPU memory) and must be understood together.
+
+**Step 1 — Rollout (`data.train_batch_size`)**
+
+`data.train_batch_size` is the number of **unique prompts** drawn from the
+dataset per training step. Before rollout, each prompt is replicated
+`actor_rollout_ref.rollout.n` times so that the rollout engine generates `n`
+independent image trajectories per prompt. The in-memory batch after rollout
+therefore holds `train_batch_size × n` image samples. GRPO advantage
+normalization runs over this **full** batch — it needs all `n` trajectories
+for every prompt to compute group-relative rewards before any splitting occurs.
+
+**Step 2 — Actor update (`actor_rollout_ref.actor.ppo_mini_batch_size`)**
+
+`ppo_mini_batch_size` controls how the full post-rollout batch is sliced for
+actor gradient updates. **Important:** this value is specified in **prompts**,
+not image samples. The trainer internally scales it by `rollout.n` to get
+the actual mini-batch size in samples:
+
+```
+effective mini-batch = ppo_mini_batch_size × rollout.n  (image samples)
+number of mini-batches per epoch = train_batch_size / ppo_mini_batch_size
+```
+
+All `n` trajectories belonging to the same prompt are kept in the same
+mini-batch. This is not optional: although advantages are already computed
+globally before this split, the gradient update for each image depends on its
+advantage relative to the other images in its group. Scattering a prompt's
+trajectories across different mini-batches would break that correspondence.
+`ppo_mini_batch_size` must divide `train_batch_size` evenly.
+
+**Step 3 — FSDP sharding and gradient accumulation
+(`actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu`)**
+
+Each mini-batch is distributed across GPUs by FSDP data parallelism, so each
+GPU receives `(ppo_mini_batch_size × n) / n_gpus` image samples. That
+per-GPU shard is then **chunked into micro-batches** of
+`ppo_micro_batch_size_per_gpu` for the actual forward/backward passes, with
+gradients accumulated across chunks before the optimizer step. This is pure
+gradient accumulation: the effective gradient is identical to running the full
+per-GPU shard in one shot; only peak activation memory changes.
+
+For diffusion models the accumulation is two-dimensional: the engine also
+loops over each active denoising timestep inside every micro-batch, so the
+total gradient accumulation steps per GPU per mini-batch is:
+
+```
+gradient_accumulation_steps = (per_gpu_samples / ppo_micro_batch_size_per_gpu)
+                              × sde_window_size
+```
+
+`ppo_micro_batch_size_per_gpu` must satisfy:
+`(ppo_mini_batch_size × n) / n_gpus` is divisible by
+`ppo_micro_batch_size_per_gpu`.
+
+**Concrete walkthrough** (reference OCR script, 4 GPUs, `sde_window_size=2`):
+
+```
+data.train_batch_size              = 32    # 32 prompts loaded
+actor_rollout_ref.rollout.n        = 16    # 16 images generated per prompt
+  → post-rollout batch             = 512   # advantage computed over all 512
+
+ppo_mini_batch_size (config)       = 16    # in prompts
+  → effective mini-batch           = 16 × 16 = 256 samples
+  → mini-batches per epoch         = 512 / 256 = 2 actor gradient steps
+
+FSDP shards 256 samples across 4 GPUs:
+  → per-GPU samples                = 256 / 4 = 64
+
+ppo_micro_batch_size_per_gpu       = 16
+  → micro-batches per GPU          = 64 / 16 = 4
+  → gradient_accumulation_steps    = 4 × 2 (sde_window_size) = 8
+```
 
 #### Reward
 

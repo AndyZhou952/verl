@@ -18,13 +18,14 @@ In this example, we post-train a ``Qwen-Image`` policy with FlowGRPO for OCR-sty
 Prerequisite
 ------------
 
-- Follow the standard :doc:`installation guide <start/install>` to create a Python environment and install ``verl`` from source.
-- Install the FlowGRPO-specific rollout and reward dependencies in the same environment:
+- Follow the standard :doc:`installation guide <start/install>` to create a Python environment.
+- First, install the FlowGRPO-specific rollout and reward dependencies in the environment:
 
 .. code-block:: bash
 
    pip install "vllm==0.18" "vllm-omni==0.18" Levenshtein
 
+- Then, install ``verl`` from source.
 - Use a machine with ``4`` GPUs for the provided example script.
 - Run the commands below from the repository root.
 
@@ -129,6 +130,28 @@ Set your W&B credentials before launching if you want remote tracking:
    export WANDB_API_KEY=<your_wandb_api_key>
 
 You can also override ``trainer.project_name`` and ``trainer.experiment_name`` from the command line to organize runs under your own project names.
+
+Diffusion-specific metrics
+--------------------------
+
+Two metrics are specific to diffusion FlowGRPO training.
+
+**critic/rewards/zero_std_ratio** — the fraction of prompt groups (out of
+``train_batch_size`` prompts) where every one of the ``n`` generated images
+received the same reward, giving a within-group standard deviation of zero.
+GRPO derives its learning signal from *relative* rewards within a group, so a
+group with zero std contributes no gradient regardless of the absolute reward
+value. A persistently high ratio (e.g. above 0.5) means the reward model is
+saturated or the task difficulty is poorly calibrated — either all images are
+rewarded or none are — and the policy is not receiving useful training signal.
+
+**actor/pg_clipfrac_higher** and **actor/pg_clipfrac_lower** — these break
+down PPO clipping by direction. ``pg_clipfrac_higher`` is the fraction of
+``(image, denoising-timestep)`` pairs where the probability ratio
+``π_new / π_old`` exceeded ``1 + clip_ratio``, meaning the policy is trying
+to increase the probability of high-advantage images more than the clip
+allows. ``pg_clipfrac_lower`` is the fraction where the ratio fell below
+``1 - clip_ratio``.
 
 Further reading
 ---------------

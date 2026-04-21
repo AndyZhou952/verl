@@ -86,3 +86,27 @@ trainer.experiment_name=qwen_image_ocr_lora
 ```
 
 Override these values on the command line if you want to log under a different project or run name.
+
+### Diffusion-specific metrics
+
+Two metrics are specific to FlowGRPO and worth monitoring closely.
+
+**`critic/rewards/zero_std_ratio`** — the fraction of prompt groups (out of
+`train_batch_size` prompts) where every one of the `n` generated images
+received the same reward, giving a within-group standard deviation of zero.
+GRPO derives its learning signal from *relative* rewards within a group, so a
+group with zero std contributes no gradient regardless of the absolute reward
+value. A persistently high ratio (e.g. above 0.5) means the reward model is
+saturated or the task difficulty is poorly calibrated — either all images are
+rewarded or none are — and the policy is not receiving useful training signal.
+
+**`actor/pg_clipfrac_higher`** and **`actor/pg_clipfrac_lower`** — these
+break down PPO clipping by direction. `pg_clipfrac_higher` is the fraction of
+`(image, denoising-timestep)` pairs where the probability ratio
+`π_new / π_old` exceeded `1 + clip_ratio`, meaning the policy is trying to
+increase the probability of high-advantage images more than the clip allows.
+`pg_clipfrac_lower` is the fraction where the ratio fell below
+`1 - clip_ratio`, meaning the policy is trying to suppress low-advantage
+images more aggressively than allowed. A large asymmetry between the two
+(e.g. `higher` >> `lower`) indicates the dominant learning direction and can
+guide tuning of `clip_ratio` or the learning rate.

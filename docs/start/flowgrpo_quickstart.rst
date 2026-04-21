@@ -156,7 +156,7 @@ allows. ``pg_clipfrac_lower`` is the fraction where the ratio fell below
 Further reading
 ---------------
 
-For the algorithm background, detailed configuration notes, and rule-based
+For the algorithm background, detailed configuration notes, async reward, and rule-based
 reward training (e.g. JPEG incompressibility), see:
 
 - :doc:`../algo/flowgrpo`

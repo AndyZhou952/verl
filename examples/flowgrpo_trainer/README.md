@@ -110,3 +110,27 @@ increase the probability of high-advantage images more than the clip allows.
 images more aggressively than allowed. A large asymmetry between the two
 (e.g. `higher` >> `lower`) indicates the dominant learning direction and can
 guide tuning of `clip_ratio` or the learning rate.
+
+## Variants
+
+For reward models that are expensive to evaluate (e.g., a VLM judge), the reward model can be allocated its own dedicated GPU resource pool and run asynchronously alongside the policy. This avoids blocking policy training on reward computation.
+
+```bash
+bash examples/flowgrpo_trainer/run_qwen_image_ocr_lora_async_reward.sh
+```
+
+
+## Performance
+
+> All experiments were conducted on *NVIDIA H800* GPUs using the OCR reward.
+
+The experiment settings and throughputs are shown in the table below.
+
+| Script | Model | Algorithm | Hybrid Engine | # Cards | Reward Fn | # GPUs for Actor | # GPUs for Rollout | # GPUs for Async Reward | Batch Size | `rollout.n` | lr   | # Val Samples | Training Samples per Step | `ppo_micro_batch_size_per_gpu` | Throughput (Samples / Seconds) |
+| --- | --- | --- | --- | --- | --- | --- | --- |-------------------------| --- | --- |------| --- | --- | --- |--------------------------------|
+| `run_qwen_image_ocr_lora.sh` | Qwen-Image | Flow-GRPO | True | 4 | qwenvl-ocr-vllm | 4 | 4 | 0 (sync)                | 32 | 16 | 3e-4 | 1k (full set) | 32×16=512 | 16 | 0.0305                         |
+| `run_qwen_image_ocr_lora_async_reward.sh` | Qwen-Image | Flow-GRPO | True | 5 | qwenvl-ocr-vllm | 4 | 4 | 1                       | 32 | 16 | 3e-4 | 1k (full set) | 32×16=512 | 16 | 0.0280                         |
+
+- Validation reward curve：
+
+**TO be added**

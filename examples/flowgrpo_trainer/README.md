@@ -133,4 +133,6 @@ The experiment settings and throughputs are shown in the table below.
 
 - Validation reward curve：
 
-**TO be added**
+<div align="center">
+<img width="600" alt="2p_comparison" src="https://github.com/user-attachments/assets/1094beaf-fed9-4661-8a6a-1c3983150648" />
+

@@ -242,22 +242,40 @@ unchanged.
 
 ### Custom rule-based scorer
 
-To implement your own rule-based reward, write a plain function with this
-signature and pass it via `reward.custom_reward_function`:
+**File placement.** Create a Python file anywhere on disk — the conventional
+place for FlowGRPO examples is alongside the existing OCR scorer at
+`examples/flowgrpo_trainer/my_reward.py`. The path you pass to the config is
+resolved relative to the working directory from which training is launched
+(i.e. the repository root). Alternatively, use a `pkg://` prefix
+(`pkg://mypackage.my_reward`) or `file://` prefix for an absolute path.
+
+**Files to modify.**
+- Add your scorer: `examples/flowgrpo_trainer/my_reward.py` (new file).
+- Update the run script: `examples/flowgrpo_trainer/run_qwen_image_ocr_lora.sh`
+  — replace the `reward.custom_reward_function.*` lines and remove
+  `reward.reward_model.*` if no VLM is needed.
+- Update or replace the dataset preprocessing script under
+  `examples/flowgrpo_trainer/data_process/` so that each row has
+  `data_source` set to your task identifier and `reward_model.ground_truth`
+  set to `""` if unused.
+
+**Function signature.** Both sync and async functions are supported: sync
+functions are automatically run in a thread executor; async functions are
+awaited directly.
 
 ```python
 def compute_score(
     data_source: str,
-    solution_image,          # torch.Tensor (C, H, W) or PIL.Image
+    solution_image: torch.Tensor,  # shape (C, H, W) image or (T, C, H, W) video; values in [0, 1]
     ground_truth: str,
     extra_info: dict,
-    **kwargs,
+    **kwargs,                       # empty for rule-based rewards; populated when a VLM router is used
 ) -> float | dict:
     ...
     # return a scalar float, or {"score": float, ...} for extra logging
 ```
 
-Set `reward.custom_reward_function.path` to the file and
+**Config.** Set `reward.custom_reward_function.path` to the file and
 `reward.custom_reward_function.name` to the function name. The reward model
 can remain disabled (`reward.reward_model.enable=False`).
 

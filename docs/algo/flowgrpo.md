@@ -205,6 +205,62 @@ ppo_micro_batch_size_per_gpu       = 16
 For an end-to-end OCR training walkthrough, including dataset preparation and
 the full runnable command, see `docs/start/flowgrpo_quickstart.rst`.
 
+## Rule-Based Reward Training
+
+FlowGRPO also supports rule-based rewards that score images directly without a
+VLM reward model, using the same `reward.reward_manager.name=visual` setup.
+
+### Built-in: JPEG incompressibility
+
+`verl/utils/reward_score/jpeg_compressibility.py` rewards images that are
+harder to JPEG-compress (richer texture, more complex content). No extra
+dependencies or reward model process are required.
+
+Minimal dataset row:
+
+```python
+{
+    "data_source": "jpeg_compressibility",
+    "prompt": [{"role": "user", "content": "<your prompt>"}],
+    "reward_model": {"ground_truth": ""},  # required by schema, ignored by scorer
+}
+```
+
+Config changes relative to the OCR example — **remove** these lines:
+
+```bash
+reward.reward_model.enable=True
+reward.reward_model.model_path=...
+reward.reward_model.rollout.name=...
+reward.reward_model.rollout.tensor_model_parallel_size=...
+reward.custom_reward_function.path=...
+reward.custom_reward_function.name=...
+```
+
+Keep `reward.reward_manager.name=visual` and all actor/rollout settings
+unchanged.
+
+### Custom rule-based scorer
+
+To implement your own rule-based reward, write a plain function with this
+signature and pass it via `reward.custom_reward_function`:
+
+```python
+def compute_score(
+    data_source: str,
+    solution_image,          # torch.Tensor (C, H, W) or PIL.Image
+    ground_truth: str,
+    extra_info: dict,
+    **kwargs,
+) -> float | dict:
+    ...
+    # return a scalar float, or {"score": float, ...} for extra logging
+```
+
+Set `reward.custom_reward_function.path` to the file and
+`reward.custom_reward_function.name` to the function name. The reward model
+can remain disabled (`reward.reward_model.enable=False`).
+
 ## Reference Example
 
 Standard LoRA training with OCR reward (Qwen-Image, 4 GPUs) using the current

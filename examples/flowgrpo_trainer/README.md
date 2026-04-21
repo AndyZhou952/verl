@@ -2,7 +2,7 @@
 
 This example shows how to post-train `Qwen-Image` with FlowGRPO on an OCR-style image generation task using `vllm-omni` rollout and a visual generative reward model (`Qwen3-VL-8B-Instruct` in this example).
 
-For the full installation and quickstart guide, see `docs/start/flowgrpo_quickstart.rst`. For algorithm details, see `docs/algo/flowgrpo.md`.
+For the full installation and quickstart guide, see `docs/start/flowgrpo_quickstart.rst`. For algorithm details and rule-based reward training (e.g. JPEG incompressibility), see `docs/algo/flowgrpo.md`.
 
 ## Installation
 

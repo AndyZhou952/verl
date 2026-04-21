@@ -147,8 +147,12 @@ The experiment settings and throughputs are shown in the table below.
 | `run_qwen_image_ocr_lora.sh` | Qwen-Image | Flow-GRPO | True | 4 | qwenvl-ocr-vllm | 4 | 4 | 0 (sync)                | 32 | 16 | 3e-4 | 1k (full set) | 32×16=512 | 16 | 0.0305                         |
 | `run_qwen_image_ocr_lora_async_reward.sh` | Qwen-Image | Flow-GRPO | True | 5 | qwenvl-ocr-vllm | 4 | 4 | 1                       | 32 | 16 | 3e-4 | 1k (full set) | 32×16=512 | 16 | 0.0280                         |
 
-- Validation reward curve：
+- Validation reward curve (evaluated with `trainer.val_before_train=True`):：
 
 <div align="center">
 <img width="600" alt="2p_comparison" src="https://github.com/user-attachments/assets/1094beaf-fed9-4661-8a6a-1c3983150648" />
-
+<br>
+qwen_image_ocr_lora: corresponding with the script `run_qwen_image_ocr_lora.sh`; 
+<br>
+qwen_image_ocr_lora_async_reward: corresponding with the script `run_qwen_image_ocr_lora_async_reward.sh`.
+</div>

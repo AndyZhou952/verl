@@ -6,7 +6,7 @@ For the full installation and quickstart guide, see `docs/start/flowgrpo_quickst
 
 ## Installation
 
-First, follow the standard `verl` installation guide in `docs/start/install.rst`.
+Install `verl` following the installation guide in `docs/start/install.rst`.
 
 Then install the FlowGRPO example-specific dependencies in the same environment:
 
@@ -89,7 +89,7 @@ Override these values on the command line if you want to log under a different p
 
 ### Diffusion-specific metrics
 
-Two metrics are specific to FlowGRPO and worth monitoring closely.
+The following metrics are specific to diffusion FlowGRPO training.
 
 **`critic/rewards/zero_std_ratio`** — the fraction of prompt groups (out of
 `train_batch_size` prompts) where every one of the `n` generated images
@@ -99,6 +99,14 @@ group with zero std contributes no gradient regardless of the absolute reward
 value. A persistently high ratio (e.g. above 0.5) means the reward model is
 saturated or the task difficulty is poorly calibrated — either all images are
 rewarded or none are — and the policy is not receiving useful training signal.
+
+**`critic/rewards/std_mean`** — the mean of the per-prompt reward standard
+deviations across all prompt groups in the batch. Complements
+`zero_std_ratio`: while `zero_std_ratio` flags completely collapsed groups,
+`std_mean` tracks the average reward spread within a group across the whole
+batch. A healthy, rising `std_mean` indicates the reward model is producing
+diverse signal; a declining `std_mean` is an early warning of reward
+saturation before `zero_std_ratio` spikes.
 
 **`actor/pg_clipfrac_higher`** and **`actor/pg_clipfrac_lower`** — these
 break down PPO clipping by direction. `pg_clipfrac_higher` is the fraction of
@@ -110,6 +118,14 @@ increase the probability of high-advantage images more than the clip allows.
 images more aggressively than allowed. A large asymmetry between the two
 (e.g. `higher` >> `lower`) indicates the dominant learning direction and can
 guide tuning of `clip_ratio` or the learning rate.
+
+**`timing_per_image_ms/{stage}`** — per-image latency in milliseconds for
+each core compute stage: `gen` (rollout), `ref` (reference log-prob),
+`old_log_prob`, `adv` (advantage computation), and `update_actor`. Use
+these to pinpoint which stage dominates step time.
+
+**`perf/throughput`** — images processed per second per GPU, computed as
+`(train_batch_size × rollout.n) / (time_per_step × n_gpus)`.
 
 ## Variants
 
